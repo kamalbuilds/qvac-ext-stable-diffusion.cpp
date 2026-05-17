@@ -113,6 +113,22 @@ sd-cli -M vid_gen \
     -o i2v.webm
 ```
 
+### LTX-2.3 dev FLF2V (first-last frame to video)
+
+```
+sd-cli -M vid_gen \
+    --diffusion-model       ltx-2.3-22b-dev-Q4_K_M.gguf \
+    --vae                   ltx-2.3-22b-dev_video_vae.safetensors \
+    --llm                   gemma-3-12b-it-Q4_K.gguf \
+    --embeddings-connectors ltx-2.3-22b-dev_embeddings_connectors.safetensors \
+    -p "glass flower blossom" --cfg-scale 6.0 --sampling-method euler -v \
+    -W 1280 -H 720 --video-frames 33 \
+    --diffusion-fa --offload-to-cpu \
+    --init-img start_image.png \
+    --end-img   end_image.png \
+    -o flf2v.webm
+```
+
 ## Quantization guidance
 
 | Level | Use case | Notes |
