@@ -1,0 +1,5 @@
+# Dependencies for script/convert_ltx2.py (the real conversion path).
+# --dry-run and --self-test need none of these; they use only the standard library.
+numpy>=1.24
+safetensors>=0.4.0
+gguf>=0.10.0
