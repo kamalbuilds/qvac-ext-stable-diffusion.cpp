@@ -2,26 +2,14 @@
  * @file ltx2_api.cpp
  * @brief LTX-Video 2.3 C API implementation.
  *
- * Assumption block (resolved once upstream sync lands)
- * =====================================================
- * The upstream PR-1 sync (feat/ltx2-video-generation) will add:
- *   1. LTX2_SCHEDULER enum value to scheduler_t in stable-diffusion.h
- *      (expected value 11, shifting SCHEDULER_COUNT to 12).
- *   2. embeddings_connectors_path field to sd_ctx_params_t.
- *   3. fps field to sd_vid_gen_params_t.
- *   4. VERSION_LTXAV to SDVersion in src/model.h.
+ * Thin facade over the public new_sd_ctx() / generate_video() entry points
+ * that exposes a small, LTX-2-specific C surface. Builds the right sampling
+ * defaults (Euler sampler, LTX2 flow scheduler, flow_shift 2.37) and routes
+ * the Gemma 3 text-encoder path through the sd_ctx_params_t::llm_path slot.
  *
- * Until then this file compiles cleanly against the current fork HEAD:
- *   - LTX2_SCHEDULER is approximated via DISCRETE_SCHEDULER with flow_shift
- *     2.37 and logs a single warning per ctx.
- *   - embeddings_connectors_path is silently omitted (no field yet).
- *   - fps is stored in ltx2_ctx_t for future wiring but not forwarded.
- *   - The LTXAV version check is done via the diffusion model descriptor
- *     string "LTXAV" if that is what the loaded model reports; for any other
- *     descriptor string we proceed and trust the caller supplied LTX weights.
- *
- * Post-sync the four #ifdef HAVE_LTX2_SYNC guards below become dead code and
- * can be removed in a follow-up cleanup commit.
+ * T2V leaves init_image.data null; I2V passes the caller's start frame
+ * through, and the underlying generate_video() VAE-encodes it, places it at
+ * latent temporal index 0, and applies the per-frame denoise mask.
  */
 
 #include "ltx2.h"
@@ -47,25 +35,9 @@
 #  define LOG_ERROR(fmt, ...) fprintf(stderr, "[ERROR] ltx2: " fmt "\n", ##__VA_ARGS__)
 #endif
 
-/* -------------------------------------------------------------------------
- * LTX2_SCHEDULER guard
- *
- * Once the upstream sync lands and scheduler_t gains LTX2_SCHEDULER, define
- * HAVE_LTX2_SYNC (e.g. via CMake) and this guard collapses to use the real
- * scheduler.
- * ---------------------------------------------------------------------- */
-#ifndef HAVE_LTX2_SYNC
-/* Pre-sync fallback: use DISCRETE_SCHEDULER with flow_shift=2.37.
- * This gives the correct sigma distribution for LTX-2.3 generation even
- * without the dedicated LTX2Scheduler class, because the flow_shift value
- * of 2.37 is the empirical default chosen for the LTXAV model family.    */
-#  define LTX2_EFFECTIVE_SCHEDULER  DISCRETE_SCHEDULER
-#  define LTX2_FLOW_SHIFT           2.37f
-#else
-/* Post-sync path: use the proper flow-matching scheduler. */
-#  define LTX2_EFFECTIVE_SCHEDULER  LTX2_SCHEDULER
-#  define LTX2_FLOW_SHIFT           2.37f
-#endif
+/* LTX-2.3 sampling defaults: Euler sampler with the LTX2 flow-matching
+ * scheduler and the empirical flow_shift used by the LTXAV model family. */
+#define LTX2_FLOW_SHIFT 2.37f
 
 /* -------------------------------------------------------------------------
  * Internal context struct
@@ -186,7 +158,7 @@ static void fill_ltx2_vid_params(sd_vid_gen_params_t* vp,
     /* Sample parameters: Euler sampler, LTX2 scheduler (or discrete fallback),
      * flow_shift=2.37 per upstream LTX-2.3 documentation.               */
     vp->sample_params.sample_method  = EULER_SAMPLE_METHOD;
-    vp->sample_params.scheduler      = LTX2_EFFECTIVE_SCHEDULER;
+    vp->sample_params.scheduler      = LTX2_SCHEDULER;
     vp->sample_params.flow_shift     = LTX2_FLOW_SHIFT;
     vp->sample_params.sample_steps   = (sample_steps > 0) ? sample_steps : 30;
     vp->sample_params.guidance.txt_cfg = cfg_scale;
@@ -194,18 +166,8 @@ static void fill_ltx2_vid_params(sd_vid_gen_params_t* vp,
     /* Disable the high-noise two-stage path (not used for LTX-2.3). */
     vp->high_noise_sample_params.sample_steps = -1;
 
-    /* Emit the pre-sync warning once per ctx. */
-#ifndef HAVE_LTX2_SYNC
-    if (warn_scheduler && warning_emitted && !(*warning_emitted)) {
-        LOG_WARN("LTX2_SCHEDULER not yet in this fork; using DISCRETE_SCHEDULER "
-                 "with flow_shift=2.37 as approximation.  Results will be correct "
-                 "once the upstream feat/ltx2-video-generation sync lands.");
-        *warning_emitted = true;
-    }
-#else
     (void)warn_scheduler;
     (void)warning_emitted;
-#endif
 }
 
 /* -------------------------------------------------------------------------
@@ -251,10 +213,16 @@ sd_image_t* ltx2_generate_t2v(ltx2_ctx_t*  ctx,
      * creates a fully-noised latent and skips the I2V conditioning path. */
     vp.init_image = {};   /* .data = nullptr, .width/.height/.channel = 0 */
 
-    sd_image_t* frames = generate_video(ctx->sd_ctx, &vp, out_num_frames);
-    if (!frames) {
-        LOG_ERROR("ltx2_generate_t2v: generate_video() returned null");
+    sd_image_t* frames     = nullptr;
+    sd_audio_t* audio      = nullptr;   /* video-only build; audio is dropped */
+    bool        ok         = generate_video(ctx->sd_ctx, &vp, &frames, out_num_frames, &audio);
+    if (!ok || !frames) {
+        LOG_ERROR("ltx2_generate_t2v: generate_video() failed");
         return nullptr;
+    }
+    if (audio) {
+        free(audio);   /* discard audio output; this fork targets video only */
+        audio = nullptr;
     }
 
     LOG_INFO("T2V done – %d frames decoded", *out_num_frames);
@@ -311,10 +279,16 @@ sd_image_t* ltx2_generate_i2v(ltx2_ctx_t*  ctx,
     vp.init_image  = init_image;
     vp.strength    = 1.0f;   /* Full I2V conditioning – first frame is fully fixed. */
 
-    sd_image_t* frames = generate_video(ctx->sd_ctx, &vp, out_num_frames);
-    if (!frames) {
-        LOG_ERROR("ltx2_generate_i2v: generate_video() returned null");
+    sd_image_t* frames     = nullptr;
+    sd_audio_t* audio      = nullptr;   /* video-only build; audio is dropped */
+    bool        ok         = generate_video(ctx->sd_ctx, &vp, &frames, out_num_frames, &audio);
+    if (!ok || !frames) {
+        LOG_ERROR("ltx2_generate_i2v: generate_video() failed");
         return nullptr;
+    }
+    if (audio) {
+        free(audio);   /* discard audio output; this fork targets video only */
+        audio = nullptr;
     }
 
     LOG_INFO("I2V done – %d frames decoded", *out_num_frames);

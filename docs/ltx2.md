@@ -37,13 +37,24 @@ Core components used here:
   dimension.
 - **Scheduler.** Flow-matching denoiser (`LTX2Scheduler`) with classifier-free guidance.
 
+## Download weights
+
+- **LTX-2.3 diffusion model**
+  - safetensors: https://huggingface.co/Kijai/LTX2.3_comfy/tree/main/diffusion_models
+  - reference GGUF: https://huggingface.co/unsloth/LTX-2.3-GGUF/tree/main
+- **Gemma-3-12b-it text encoder**: https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/tree/main
+- **Embeddings connectors**: https://huggingface.co/unsloth/LTX-2.3-GGUF/tree/main/text_encoders
+- **Video VAE**: https://huggingface.co/unsloth/LTX-2.3-GGUF/tree/main/vae
+
+The audio VAE is published in the same folder but is not used by this video-only build.
+
 ## Conversion: `script/convert_ltx2.py`
 
 Converts an LTX-2.3 safetensors checkpoint to a single GGUF file for ggml inference.
 
 ```bash
 pip install -r script/requirements-ltx2.txt
-# Inspect a checkpoint without downloading nothing extra and without writing output:
+# Inspect a checkpoint without writing output:
 python3 script/convert_ltx2.py ltx-2.3-22b-dev.safetensors --dry-run
 # Convert at Q8_0, bundling the Video-VAE:
 python3 script/convert_ltx2.py ltx-2.3-22b-dev.safetensors --vae ltx-vae.safetensors \
@@ -71,18 +82,35 @@ ARM64, Metal on macOS, Vulkan on Linux and Windows). See `docs/build.md` for the
 
 ## Usage (CLI)
 
-```bash
-# Text to video
-./bin/sd --mode vid_gen -M ltx2 \
-    --diffusion-model ltx2-22b-q8_0.gguf --vae ltx-vae.gguf --gemma gemma3.gguf \
-    -p "a colorful bird flapping its wings over a calm lake" \
-    --video-frames 49 --fps 16 -W 512 -H 768 -o out.mp4
+### LTX-2.3 dev T2V
 
-# Image to video (animate a reference frame)
-./bin/sd --mode vid_gen -M ltx2 \
-    --diffusion-model ltx2-22b-q8_0.gguf --vae ltx-vae.gguf --gemma gemma3.gguf \
-    -i reference.png -p "the subject turns and smiles" \
-    --video-frames 49 --fps 16 -o out.mp4
+```
+sd-cli -M vid_gen \
+    --diffusion-model       ltx-2.3-22b-dev-Q4_K_M.gguf \
+    --vae                   ltx-2.3-22b-dev_video_vae.safetensors \
+    --llm                   gemma-3-12b-it-Q4_K.gguf \
+    --embeddings-connectors ltx-2.3-22b-dev_embeddings_connectors.safetensors \
+    -p "a lovely cat" \
+    -n "worst quality, low quality, blurry, distorted, artifacts" \
+    --cfg-scale 6.0 --sampling-method euler -v \
+    -W 1280 -H 720 --video-frames 33 --fps 24 \
+    --diffusion-fa --offload-to-cpu \
+    -o t2v.webm
+```
+
+### LTX-2.3 dev I2V
+
+```
+sd-cli -M vid_gen \
+    --diffusion-model       ltx-2.3-22b-dev-Q4_K_M.gguf \
+    --vae                   ltx-2.3-22b-dev_video_vae.safetensors \
+    --llm                   gemma-3-12b-it-Q4_K.gguf \
+    --embeddings-connectors ltx-2.3-22b-dev_embeddings_connectors.safetensors \
+    -p "a lovely cat" --cfg-scale 6.0 --sampling-method euler -v \
+    -W 1280 -H 720 --video-frames 33 \
+    --diffusion-fa --offload-to-cpu \
+    -i reference.png \
+    -o i2v.webm
 ```
 
 ## Quantization guidance
