@@ -36,7 +36,7 @@ public:
         }
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* x) override {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) override {
         // x: [n, n_in, h, w]
         // return: [n, n_out, h, w]
 
@@ -106,7 +106,7 @@ public:
         blocks[std::to_string(index++)] = std::shared_ptr<GGMLBlock>(new Conv2d(channels, z_channels, {3, 3}, {1, 1}, {1, 1}));
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* x) override {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) override {
         // x: [n, in_channels, h, w]
         // return: [n, z_channels, h/8, w/8]
 
@@ -156,7 +156,7 @@ public:
         blocks[std::to_string(index++)] = std::shared_ptr<GGMLBlock>(new Conv2d(channels, out_channels, {3, 3}, {1, 1}, {1, 1}));
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* z) override {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* z) override {
         // z: [n, z_channels, h, w]
         // return: [n, out_channels, h*8, w*8]
 
@@ -191,7 +191,7 @@ public:
         blocks["conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(channels * stride, channels, {1, 1}, {1, 1}, {0, 0}, {1, 1}, false));
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* x) override {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) override {
         auto conv = std::dynamic_pointer_cast<UnaryBlock>(blocks["conv"]);
         auto h    = x;
         if (stride != 1) {
@@ -211,7 +211,7 @@ public:
         blocks["conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(channels, channels * stride, {1, 1}, {1, 1}, {0, 0}, {1, 1}, false));
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* x) override {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) override {
         auto conv = std::dynamic_pointer_cast<UnaryBlock>(blocks["conv"]);
         auto h    = conv->forward(ctx, x);
         if (stride != 1) {
@@ -235,7 +235,7 @@ public:
         }
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* x, struct ggml_tensor* past) {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* past) {
         // x: [n, channels, h, w]
         auto conv0 = std::dynamic_pointer_cast<Conv2d>(blocks["conv.0"]);
         auto conv1 = std::dynamic_pointer_cast<Conv2d>(blocks["conv.2"]);
@@ -259,10 +259,10 @@ public:
     }
 };
 
-struct ggml_tensor* patchify(struct ggml_context* ctx,
-                             struct ggml_tensor* x,
-                             int64_t patch_size,
-                             int64_t b = 1) {
+ggml_tensor* patchify(ggml_context* ctx,
+                      ggml_tensor* x,
+                      int64_t patch_size,
+                      int64_t b = 1) {
     // x: [f, b*c, h*q, w*r]
     // return: [f, b*c*r*q, h, w]
     if (patch_size == 1) {
@@ -288,10 +288,10 @@ struct ggml_tensor* patchify(struct ggml_context* ctx,
     return x;
 }
 
-struct ggml_tensor* unpatchify(struct ggml_context* ctx,
-                               struct ggml_tensor* x,
-                               int64_t patch_size,
-                               int64_t b = 1) {
+ggml_tensor* unpatchify(ggml_context* ctx,
+                        ggml_tensor* x,
+                        int64_t patch_size,
+                        int64_t b = 1) {
     // x: [f, b*c*r*q, h, w]
     // return: [f, b*c, h*q, w*r]
     if (patch_size == 1) {
@@ -338,7 +338,7 @@ public:
         blocks[std::to_string(index)] = std::shared_ptr<GGMLBlock>(new Conv2d(hidden, z_channels, {3, 3}, {1, 1}, {1, 1}));
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* z) override {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* z) override {
         auto first_conv = std::dynamic_pointer_cast<Conv2d>(blocks["0"]);
 
         if (patch_size > 1) {
@@ -395,7 +395,7 @@ public:
         blocks[std::to_string(index++)] = std::shared_ptr<GGMLBlock>(new Conv2d(channels[num_layers], out_channels * patch_size * patch_size, {3, 3}, {1, 1}, {1, 1}));
     }
 
-    struct ggml_tensor* forward(GGMLRunnerContext* ctx, struct ggml_tensor* z) override {
+    ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* z) override {
         auto first_conv = std::dynamic_pointer_cast<Conv2d>(blocks["1"]);
 
         // Clamp()
@@ -442,10 +442,12 @@ protected:
     SDVersion version;
 
 public:
+    int z_channels = 16;
+
+public:
     TAEHV(bool decode_only = true, SDVersion version = VERSION_WAN2)
         : decode_only(decode_only), version(version) {
-        int z_channels = 16;
-        int patch      = 1;
+        int patch = 1;
         if (version == VERSION_WAN2_2_TI2V) {
             z_channels = 48;
             patch      = 2;
@@ -456,7 +458,7 @@ public:
         }
     }
 
-    struct ggml_tensor* decode(GGMLRunnerContext* ctx, struct ggml_tensor* z) {
+    ggml_tensor* decode(GGMLRunnerContext* ctx, ggml_tensor* z) {
         auto decoder = std::dynamic_pointer_cast<TinyVideoDecoder>(blocks["decoder"]);
         if (sd_version_is_wan(version)) {
             // (W, H, C, T) -> (W, H, T, C)
@@ -470,7 +472,7 @@ public:
         return result;
     }
 
-    struct ggml_tensor* encode(GGMLRunnerContext* ctx, struct ggml_tensor* x) {
+    ggml_tensor* encode(GGMLRunnerContext* ctx, ggml_tensor* x) {
         auto encoder = std::dynamic_pointer_cast<TinyVideoEncoder>(blocks["encoder"]);
         // (W, H, T, C) -> (W, H, C, T)
         x                  = ggml_cont(ctx->ggml_ctx, ggml_permute(ctx->ggml_ctx, x, 0, 1, 3, 2));
@@ -494,9 +496,11 @@ protected:
     bool taef2 = false;
 
 public:
+    int z_channels = 4;
+
+public:
     TAESD(bool decode_only = true, SDVersion version = VERSION_SD1)
         : decode_only(decode_only) {
-        int z_channels       = 4;
         bool use_midblock_gn = false;
         taef2                = sd_version_is_flux2(version);
 
@@ -514,7 +518,7 @@ public:
         }
     }
 
-    struct ggml_tensor* decode(GGMLRunnerContext* ctx, struct ggml_tensor* z) {
+    ggml_tensor* decode(GGMLRunnerContext* ctx, ggml_tensor* z) {
         auto decoder = std::dynamic_pointer_cast<TinyDecoder>(blocks["decoder.layers"]);
         if (taef2) {
             z = unpatchify(ctx->ggml_ctx, z, 2);
@@ -522,7 +526,7 @@ public:
         return decoder->forward(ctx, z);
     }
 
-    struct ggml_tensor* encode(GGMLRunnerContext* ctx, struct ggml_tensor* x) {
+    ggml_tensor* encode(GGMLRunnerContext* ctx, ggml_tensor* x) {
         auto encoder = std::dynamic_pointer_cast<TinyEncoder>(blocks["encoder.layers"]);
         auto z       = encoder->forward(ctx, x);
         if (taef2) {
@@ -532,32 +536,20 @@ public:
     }
 };
 
-struct TinyAutoEncoder : public GGMLRunner {
-    TinyAutoEncoder(ggml_backend_t backend, bool offload_params_to_cpu)
-        : GGMLRunner(backend, offload_params_to_cpu) {}
-    virtual bool compute(const int n_threads,
-                         struct ggml_tensor* z,
-                         bool decode_graph,
-                         struct ggml_tensor** output,
-                         struct ggml_context* output_ctx = nullptr) = 0;
-
-    virtual bool load_from_file(const std::string& file_path, int n_threads)                                      = 0;
-    virtual void get_param_tensors(std::map<std::string, struct ggml_tensor*>& tensors, const std::string prefix) = 0;
-};
-
-struct TinyImageAutoEncoder : public TinyAutoEncoder {
+struct TinyImageAutoEncoder : public VAE {
     TAESD taesd;
     bool decode_only = false;
 
     TinyImageAutoEncoder(ggml_backend_t backend,
-                         bool offload_params_to_cpu,
+                         ggml_backend_t params_backend,
                          const String2TensorStorage& tensor_storage_map,
                          const std::string prefix,
                          bool decoder_only = true,
                          SDVersion version = VERSION_SD1)
         : decode_only(decoder_only),
           taesd(decoder_only, version),
-          TinyAutoEncoder(backend, offload_params_to_cpu) {
+          VAE(version, backend, params_backend) {
+        scale_input = false;
         taesd.init(params_ctx, tensor_storage_map, prefix);
     }
 
@@ -565,72 +557,61 @@ struct TinyImageAutoEncoder : public TinyAutoEncoder {
         return "taesd";
     }
 
-    bool load_from_file(const std::string& file_path, int n_threads) {
-        LOG_INFO("loading taesd from '%s', decode_only = %s", file_path.c_str(), decode_only ? "true" : "false");
-        alloc_params_buffer();
-        std::map<std::string, ggml_tensor*> taesd_tensors;
-        taesd.get_param_tensors(taesd_tensors);
-        std::set<std::string> ignore_tensors;
-        if (decode_only) {
-            ignore_tensors.insert("encoder.");
-        }
-
-        ModelLoader model_loader;
-        if (!model_loader.init_from_file_and_convert_name(file_path)) {
-            LOG_ERROR("init taesd model loader from file failed: '%s'", file_path.c_str());
-            return false;
-        }
-
-        bool success = model_loader.load_tensors(taesd_tensors, ignore_tensors, n_threads);
-
-        if (!success) {
-            LOG_ERROR("load tae tensors from model loader failed");
-            return false;
-        }
-
-        LOG_INFO("taesd model loaded");
-        return success;
-    }
-
-    void get_param_tensors(std::map<std::string, struct ggml_tensor*>& tensors, const std::string prefix) {
+    void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors, const std::string prefix) {
         taesd.get_param_tensors(tensors, prefix);
     }
 
-    struct ggml_cgraph* build_graph(struct ggml_tensor* z, bool decode_graph) {
-        struct ggml_cgraph* gf  = ggml_new_graph(compute_ctx);
-        z                       = to_backend(z);
-        auto runner_ctx         = get_context();
-        struct ggml_tensor* out = decode_graph ? taesd.decode(&runner_ctx, z) : taesd.encode(&runner_ctx, z);
+    sd::Tensor<float> vae_output_to_latents(const sd::Tensor<float>& vae_output, std::shared_ptr<RNG> rng) override {
+        SD_UNUSED(rng);
+        return vae_output;
+    }
+
+    sd::Tensor<float> diffusion_to_vae_latents(const sd::Tensor<float>& latents) override {
+        return latents;
+    }
+
+    sd::Tensor<float> vae_to_diffusion_latents(const sd::Tensor<float>& latents) override {
+        return latents;
+    }
+
+    int get_encoder_output_channels(int input_channels) {
+        return taesd.z_channels;
+    }
+
+    ggml_cgraph* build_graph(const sd::Tensor<float>& z_tensor, bool decode_graph) {
+        ggml_cgraph* gf  = ggml_new_graph(compute_ctx);
+        ggml_tensor* z   = make_input(z_tensor);
+        auto runner_ctx  = get_context();
+        ggml_tensor* out = decode_graph ? taesd.decode(&runner_ctx, z) : taesd.encode(&runner_ctx, z);
         ggml_build_forward_expand(gf, out);
         return gf;
     }
 
-    bool compute(const int n_threads,
-                 struct ggml_tensor* z,
-                 bool decode_graph,
-                 struct ggml_tensor** output,
-                 struct ggml_context* output_ctx = nullptr) {
-        auto get_graph = [&]() -> struct ggml_cgraph* {
-            return build_graph(z, decode_graph);
+    sd::Tensor<float> _compute(const int n_threads,
+                               const sd::Tensor<float>& z_tensor,
+                               bool decode_graph) override {
+        auto get_graph = [&]() -> ggml_cgraph* {
+            return build_graph(z_tensor, decode_graph);
         };
 
-        return GGMLRunner::compute(get_graph, n_threads, false, output, output_ctx);
+        return restore_trailing_singleton_dims(GGMLRunner::compute<float>(get_graph, n_threads, false), z_tensor.dim());
     }
 };
 
-struct TinyVideoAutoEncoder : public TinyAutoEncoder {
+struct TinyVideoAutoEncoder : public VAE {
     TAEHV taehv;
     bool decode_only = false;
 
     TinyVideoAutoEncoder(ggml_backend_t backend,
-                         bool offload_params_to_cpu,
+                         ggml_backend_t params_backend,
                          const String2TensorStorage& tensor_storage_map,
                          const std::string prefix,
                          bool decoder_only = true,
                          SDVersion version = VERSION_WAN2)
         : decode_only(decoder_only),
           taehv(decoder_only, version),
-          TinyAutoEncoder(backend, offload_params_to_cpu) {
+          VAE(version, backend, params_backend) {
+        scale_input = false;
         taehv.init(params_ctx, tensor_storage_map, prefix);
     }
 
@@ -638,56 +619,44 @@ struct TinyVideoAutoEncoder : public TinyAutoEncoder {
         return "taehv";
     }
 
-    bool load_from_file(const std::string& file_path, int n_threads) {
-        LOG_INFO("loading taehv from '%s', decode_only = %s", file_path.c_str(), decode_only ? "true" : "false");
-        alloc_params_buffer();
-        std::map<std::string, ggml_tensor*> taehv_tensors;
-        taehv.get_param_tensors(taehv_tensors);
-        std::set<std::string> ignore_tensors;
-        if (decode_only) {
-            ignore_tensors.insert("encoder.");
-        }
-
-        ModelLoader model_loader;
-        if (!model_loader.init_from_file(file_path)) {
-            LOG_ERROR("init taehv model loader from file failed: '%s'", file_path.c_str());
-            return false;
-        }
-
-        bool success = model_loader.load_tensors(taehv_tensors, ignore_tensors, n_threads);
-
-        if (!success) {
-            LOG_ERROR("load tae tensors from model loader failed");
-            return false;
-        }
-
-        LOG_INFO("taehv model loaded");
-        return success;
-    }
-
-    void get_param_tensors(std::map<std::string, struct ggml_tensor*>& tensors, const std::string prefix) {
+    void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors, const std::string prefix) {
         taehv.get_param_tensors(tensors, prefix);
     }
 
-    struct ggml_cgraph* build_graph(struct ggml_tensor* z, bool decode_graph) {
-        struct ggml_cgraph* gf  = ggml_new_graph(compute_ctx);
-        z                       = to_backend(z);
-        auto runner_ctx         = get_context();
-        struct ggml_tensor* out = decode_graph ? taehv.decode(&runner_ctx, z) : taehv.encode(&runner_ctx, z);
+    sd::Tensor<float> vae_output_to_latents(const sd::Tensor<float>& vae_output, std::shared_ptr<RNG> rng) override {
+        SD_UNUSED(rng);
+        return vae_output;
+    }
+
+    sd::Tensor<float> diffusion_to_vae_latents(const sd::Tensor<float>& latents) override {
+        return latents;
+    }
+
+    sd::Tensor<float> vae_to_diffusion_latents(const sd::Tensor<float>& latents) override {
+        return latents;
+    }
+
+    int get_encoder_output_channels(int input_channels) {
+        return taehv.z_channels;
+    }
+
+    ggml_cgraph* build_graph(const sd::Tensor<float>& z_tensor, bool decode_graph) {
+        ggml_cgraph* gf  = ggml_new_graph(compute_ctx);
+        ggml_tensor* z   = make_input(z_tensor);
+        auto runner_ctx  = get_context();
+        ggml_tensor* out = decode_graph ? taehv.decode(&runner_ctx, z) : taehv.encode(&runner_ctx, z);
         ggml_build_forward_expand(gf, out);
         return gf;
     }
 
-    bool compute(const int n_threads,
-                 struct ggml_tensor* z,
-                 bool decode_graph,
-                 struct ggml_tensor** output,
-                 struct ggml_context* output_ctx = nullptr) {
-        auto get_graph = [&]() -> struct ggml_cgraph* {
-            return build_graph(z, decode_graph);
+    sd::Tensor<float> _compute(const int n_threads,
+                               const sd::Tensor<float>& z_tensor,
+                               bool decode_graph) override {
+        auto get_graph = [&]() -> ggml_cgraph* {
+            return build_graph(z_tensor, decode_graph);
         };
 
-        return GGMLRunner::compute(get_graph, n_threads, false, output, output_ctx);
+        return restore_trailing_singleton_dims(GGMLRunner::compute<float>(get_graph, n_threads, false), z_tensor.dim());
     }
 };
 

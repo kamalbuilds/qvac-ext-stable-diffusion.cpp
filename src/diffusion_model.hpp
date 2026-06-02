@@ -40,7 +40,6 @@ struct DiffusionParams {
     float vace_strength                                                = 1.f;
     int audio_length                                                   = 0;
     float frame_rate                                                   = 24.f;
-    const sd::Tensor<float>* video_positions                           = nullptr;
     const std::vector<int>* skip_layers                                = nullptr;
 };
 
@@ -767,8 +766,7 @@ struct LTXAVModel : public DiffusionModel {
                              tensor_or_empty(diffusion_params.audio_x),
                              tensor_or_empty(diffusion_params.audio_timesteps),
                              diffusion_params.audio_length,
-                             diffusion_params.frame_rate,
-                             tensor_or_empty(diffusion_params.video_positions));
+                             diffusion_params.frame_rate);
     }
 };
 
