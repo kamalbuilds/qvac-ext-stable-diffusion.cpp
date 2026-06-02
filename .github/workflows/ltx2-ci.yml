@@ -1,0 +1,58 @@
+name: LTX-2 Convert Script CI
+
+on:
+  push:
+    paths:
+      - "script/convert_ltx2.py"
+      - "script/testdata/**"
+      - "docs/ltx2.md"
+      - "include/ltx2.h"
+      - "src/ltx2_api.cpp"
+      - ".github/workflows/ltx2-ci.yml"
+  pull_request:
+    paths:
+      - "script/convert_ltx2.py"
+      - "script/testdata/**"
+      - "docs/ltx2.md"
+      - "include/ltx2.h"
+      - "src/ltx2_api.cpp"
+      - ".github/workflows/ltx2-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  convert-ltx2-self-test:
+    name: convert-ltx2-self-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run convert_ltx2.py self-test
+        run: python3 script/convert_ltx2.py --self-test
+
+      - name: Run convert_ltx2.py help
+        run: python3 script/convert_ltx2.py --help
+
+      - name: Lint Python script (Ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
+        run: python3 -m py_compile script/convert_ltx2.py
